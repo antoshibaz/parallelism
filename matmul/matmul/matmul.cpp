@@ -141,7 +141,7 @@ cl_platform_id find_opencl_platform(const char* prefPlatform, cl_device_type sel
                 }
                 else
                 {
-                    std::cout << "Devices are missing for this platform" << std::endl;
+                    std::cout << "Devices of assigned type are missing for this platform" << std::endl;
                     throw cl::Error(-32);
                 }
 
@@ -517,7 +517,7 @@ int main()
     double t = omp_get_wtime();
     matmul(mat1, mat2, matres1, s1, s2);
     t = omp_get_wtime() - t;
-    printf("matmul exec time = %lg\n", t);
+    printf("matmul exec time = %lg\n\n", t);
 
     t = omp_get_wtime();
     matmul_parallel_omp(mat1, mat2, matres2, s1, s2);
@@ -559,6 +559,7 @@ int main()
     c = equalsMat(matres1, matres2, s3, s3);
     printf("equals = %i\n\n", c);
 
+    memset(matres3, 0, s2.w * s1.h * sizeof(float));
     try
     {
         // Init OpenCL
@@ -570,7 +571,8 @@ int main()
         selPlatform.getDevices(selDeviceType, &platformDevices);
         cl::Device selDevice = platformDevices[0];
         std::cout << "Using device: " << selDevice.getInfo<CL_DEVICE_NAME>() << std::endl;
-
+        printf("\n");
+        
         // Create context
         cl::Context context(selDevice);
 
@@ -600,22 +602,73 @@ int main()
         cl::Buffer buffMr(context, CL_MEM_WRITE_ONLY, s3.w * s3.h * sizeof(cl_float));
 
         // Transfer buffers in device RAM
-        queue.enqueueWriteBuffer(buffM1, CL_TRUE, 0, s1.w * s1.h * sizeof(cl_float), mat1);
-        queue.enqueueWriteBuffer(buffM2, CL_TRUE, 0, s2.w * s2.h * sizeof(cl_float), mat2);
+        //queue.enqueueWriteBuffer(buffM1, CL_TRUE, 0, s1.w * s1.h * sizeof(cl_float), mat1);
+        //queue.enqueueWriteBuffer(buffM2, CL_TRUE, 0, s2.w * s2.h * sizeof(cl_float), mat2);
+
+        int blockSize = 16;
 
         cl::Kernel kernel = cl::Kernel(program, "matmul");
         kernel.setArg(0, buffM1);
         kernel.setArg(1, buffM2);
         kernel.setArg(2, buffMr);
         kernel.setArg(3, s1.w);
-        t = omp_get_wtime();
+
+        cl::Kernel kernel2 = cl::Kernel(program, "matmul2");
+        kernel2.setArg(0, buffM1);
+        kernel2.setArg(1, buffM2);
+        kernel2.setArg(2, buffMr);
+        kernel2.setArg(3, s1.w);
+        clSetKernelArg(kernel2.get(), 4, blockSize * blockSize * sizeof(cl_float), NULL);
+        clSetKernelArg(kernel2.get(), 5, blockSize * blockSize * sizeof(cl_float), NULL);
+
+        cl::Kernel kernel3 = cl::Kernel(program, "matrixMul");
+        kernel3.setArg(0, buffMr);
+        kernel3.setArg(1, buffM1);
+        kernel3.setArg(2, buffM2);
+        clSetKernelArg(kernel3.get(), 3, blockSize * blockSize * sizeof(cl_float), NULL);
+        clSetKernelArg(kernel3.get(), 4, blockSize * blockSize * sizeof(cl_float), NULL);
+        kernel3.setArg(5, s1.w);
+        kernel3.setArg(6, s2.w);
+
         cl::NDRange workSize(s3.w, s3.h);
-        queue.enqueueNDRangeKernel(kernel, cl::NullRange, workSize, cl::NullRange);
+        cl::NDRange workGroupSize(blockSize, blockSize);
+
+        t = omp_get_wtime();
+        queue.enqueueNDRangeKernel(kernel, cl::NullRange, workSize, workGroupSize);
         queue.enqueueReadBuffer(buffMr, CL_TRUE, 0, s3.w * s3.h * sizeof(cl_float), matres3);
         t = omp_get_wtime() - t;
         printf("matmul OpenCL exec time = %lg\n", t);
         c = equalsMat(matres1, matres3, s3, s3);
         printf("equals = %i\n\n", c);
+
+        memset(matres3, 0, s2.w * s1.h * sizeof(float));
+        t = omp_get_wtime();
+        queue.enqueueNDRangeKernel(kernel2, cl::NullRange, workSize, workGroupSize);
+        queue.enqueueReadBuffer(buffMr, CL_TRUE, 0, s3.w * s3.h * sizeof(cl_float), matres3);
+        t = omp_get_wtime() - t;
+        printf("matmul2 OpenCL exec time = %lg\n", t);
+        c = equalsMat(matres1, matres3, s3, s3);
+        printf("equals = %i\n\n", c);
+
+        memset(matres3, 0, s2.w * s1.h * sizeof(float));
+        t = omp_get_wtime();
+        queue.enqueueNDRangeKernel(kernel3, cl::NullRange, workSize, workGroupSize);
+        queue.enqueueReadBuffer(buffMr, CL_TRUE, 0, s3.w * s3.h * sizeof(cl_float), matres3);
+        t = omp_get_wtime() - t;
+        printf("matmul3 OpenCL exec time = %lg\n", t);
+        c = equalsMat(matres1, matres3, s3, s3);
+        printf("equals = %i\n\n", c);
+
+        /*
+        memset(matres3, 0, s2.w * s1.h * sizeof(float));
+        t = omp_get_wtime();
+        queue.enqueueNDRangeKernel(kernel3, cl::NullRange, workSize, workGroupSize);
+        queue.enqueueReadBuffer(buffMr, CL_TRUE, 0, s3.w * s3.h * sizeof(cl_float), matres3);
+        t = omp_get_wtime() - t;
+        printf("matmul3 OpenCL exec time = %lg\n", t);
+        c = equalsMat(matres1, matres3, s3, s3);
+        printf("equals = %i\n\n", c);
+        */
     }
     catch (cl::Error err)
     {
