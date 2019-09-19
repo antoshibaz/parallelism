@@ -111,7 +111,7 @@ int main(int argc, char **argv)
         t = MPI_Wtime() - t;
         printf("matmul exec time = %lg\n", t);
         int c = equalsMat(matres, matres2, s3, s3);
-        printf("equals = %i\n\n", c);
+        printf("equals = %i\n", c);
     }
 
     MPI_Finalize();

@@ -15,7 +15,7 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="matmul.cpp">
+    <ClCompile Include="matmul_opencl.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
